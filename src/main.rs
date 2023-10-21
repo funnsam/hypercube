@@ -37,39 +37,46 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         fps = (fps + 1000.0 / total) / 2.0;
 
         if state.toggle_rotate {
-            state.r += (std::f32::consts::TAU * 0.25) * (total as f32 / 1000.0);
+            state.r4 += (std::f32::consts::TAU * 0.125) * (total as f32 / 1000.0);
+            state.r3 += (std::f32::consts::TAU * 0.125) * (total as f32 / 1000.0) * (1.0 / 4.0);
         }
     }
 }
 */
 
-use std::fs::File;
+use std::{fs::File, io::Write};
 use gif::*;
-const SIZE: usize = 1080;
+const SIZE: [usize; 2] = [1080, 1920];
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut palette = Vec::with_capacity(256*3);
     for i in 0..=255 {
+        palette.push(i >> 1);
         palette.push(i);
-        palette.push(i);
-        palette.push(i);
+        palette.push(i >> 1);
     }
 
     let mut file = File::create("hypercube.gif")?;
-    let mut encoder = Encoder::new(&mut file, SIZE as u16, SIZE as u16, &palette)?;
+    let mut encoder = Encoder::new(&mut file, SIZE[0] as u16, SIZE[1] as u16, &palette)?;
     encoder.set_repeat(Repeat::Infinite)?;
 
     let mut state = renderer::State::default();
-    for _ in 0..20*8 {
+    for i in 0..20*32 {
         let mut frame = Frame::default();
-        frame.width  = SIZE as u16;
-        frame.height = SIZE as u16;
+        frame.width  = SIZE[0] as u16;
+        frame.height = SIZE[1] as u16;
         frame.delay  = 100 / 20;
-        let f = renderer::render(&mut state, SIZE).into_iter().flatten().collect::<Vec<u8>>();
+        let f = renderer::render(&mut state, SIZE[0], SIZE[1]).into_iter().flatten().collect::<Vec<u8>>();
         frame.buffer = std::borrow::Cow::Borrowed(&f);
         encoder.write_frame(&frame)?;
 
-        state.r += (std::f32::consts::TAU * 0.25) * (1.0 / 20.0);
+        state.r4 += (std::f32::consts::TAU * 0.125) * (1.0 / 20.0);
+        state.r3 += (std::f32::consts::TAU * 0.125) * (1.0 / 20.0) * (1.0 / 4.0);
+
+        print!("\x1b[0GFrame {i} done");
+        std::io::stdout().lock().flush()?;
     }
+
+    println!();
 
     Ok(())
 }

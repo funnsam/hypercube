@@ -69,12 +69,6 @@ pub struct V4 {
     pub w: f32,
 }
 
-pub struct V3 {
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
-}
-
 pub struct Edge {
     pub a: usize,
     pub b: usize,
@@ -85,8 +79,10 @@ pub struct State {
     pub v: Vec<V4>,
     pub e: Vec<Edge>,
     pub f: f32,
-    pub r: f32,
     pub p: V4,
+
+    pub r4: f32,
+    pub r3: f32,
 
     // controls
     pub toggle_rotate: bool
@@ -95,12 +91,6 @@ pub struct State {
 impl V4 {
     pub fn new(x: f32, y: f32, z: f32, w: f32) -> V4 {
         V4 { x, y, z, w }
-    }
-}
-
-impl V3 {
-    pub fn new(x: f32, y: f32, z: f32) -> V3 {
-        V3 { x, y, z }
     }
 }
 
@@ -116,8 +106,9 @@ impl Default for State {
             v: CUBE_VERT!(),
             e: CUBE_EDGE!(),
             f: 2.5,
-            r: 0.0,
             p: V4::new(0.0, 0.0, 0.0, 0.0),
+            r4: 0.0,
+            r3: 0.0,
 
             toggle_rotate: false,
         }
@@ -128,26 +119,28 @@ pub fn fov_to_fl(fov: f32) -> f32 {
     2.0 / (2.0 * (fov / 2.0).tan())
 }
 
-pub fn render(state: &mut State, size: usize) -> Vec<Vec<u8>> {
+pub fn render(state: &mut State, size_x: usize, size_y: usize) -> Vec<Vec<u8>> {
     struct ProjectedPoint { x: f32, y: f32, d: f32 }
     struct ScreenPoint { x: isize, y: isize, d: f32 }
 
-    let mut screen = vec![vec![0; size]; size];
+    let mut screen = vec![vec![0; size_x]; size_y];
     let mut verts = Vec::with_capacity(state.v.len());
-    let sin = state.r.sin();
-    let cos = state.r.cos();
+    let sin4 = state.r4.sin();
+    let cos4 = state.r4.cos();
+    let sin3 = state.r3.sin();
+    let cos3 = state.r3.cos();
 
     for v in state.v.iter() {
         // 4d to 3d
-        let x = v.x * sin + v.w * cos - state.p.x;
+        let x = v.x * cos4 - v.w * sin4 - state.p.x;
         let y = v.y - state.p.y;
         let z = v.z - state.p.z;
-        let w = v.x * cos - v.w * sin - state.p.w;
+        let w = v.x * sin4 + v.w * cos4 - state.p.w;
         let d = w + state.f;
 
-        let px = x * state.f / d;
+        let px = (x * cos3 - z * sin3) * state.f / d;
         let py = y * state.f / d;
-        let pz = z * state.f / d;
+        let pz = (x * sin3 + z * cos3) * state.f / d;
 
         // 3d to 2d
         let d = pz + state.f;
@@ -160,8 +153,8 @@ pub fn render(state: &mut State, size: usize) -> Vec<Vec<u8>> {
     let mut sverts = Vec::with_capacity(verts.len());
     for v in verts {
         sverts.push(ScreenPoint {
-            x: (size as f32 * (v.x*0.5+0.5)) as isize,
-            y: (size as f32 * (v.y*0.5+0.5)) as isize,
+            x: (size_x.min(size_y) as f32 * (v.x*0.5+0.5) + 0.max(size_x as isize - size_y as isize) as f32 / 2.0) as isize,
+            y: (size_x.min(size_y) as f32 * (v.y*0.5+0.5) + 0.max(size_y as isize - size_x as isize) as f32 / 2.0) as isize,
             d: v.d,
         });
     }
@@ -174,6 +167,7 @@ pub fn render(state: &mut State, size: usize) -> Vec<Vec<u8>> {
         }
 
         // Line drawing
+        let px_size = (size_x.min(size_y) as isize).div_ceil(100);
         let mut x = v1.x;
         let mut y = v1.y;
         let mut dx = (v2.x-v1.x).abs();
@@ -207,11 +201,9 @@ pub fn render(state: &mut State, size: usize) -> Vec<Vec<u8>> {
 
             let i = i as f32 / dx as f32;
             let l = v1.d * (1.0 - i) + v2.d * i;
-            for i in 0..(size as isize).div_ceil(100) {
-                if interchange {
-                    plot(&mut screen, size, x+i, y, ((1.0-(l / 10.0).min(0.5)) * 255.0) as u8);
-                } else {
-                    plot(&mut screen, size, x, y+i, ((1.0-(l / 10.0).min(0.5)) * 255.0) as u8);
+            for i in 0..px_size {
+                for j in 0..px_size {
+                    plot(&mut screen, size_x, size_y, x+j-px_size/2, y+i-px_size/2, ((1.0-(l / 10.0).min(0.5)) * 255.0) as u8);
                 }
             }
         }
@@ -219,9 +211,9 @@ pub fn render(state: &mut State, size: usize) -> Vec<Vec<u8>> {
     screen
 }
 
-fn plot(screen: &mut Vec<Vec<u8>>, size: usize, x: isize, y: isize, val: u8) {
-    if  x >= 0 && x < size as isize &&
-        y >= 0 && y < size as isize {
+fn plot(screen: &mut Vec<Vec<u8>>, size_x: usize, size_y: usize, x: isize, y: isize, val: u8) {
+    if  x >= 0 && x < size_x as isize &&
+        y >= 0 && y < size_y as isize {
         if screen[y as usize][x as usize] < val {
             screen[y as usize][x as usize] = val
         }
